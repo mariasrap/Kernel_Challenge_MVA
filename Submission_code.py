@@ -168,9 +168,7 @@ class ProductGraph:
                 end_1 =  (end-(end%m))/m +1 if end%m!=0 else (end-(end%m))/m 
                 end_2 = end%m if end%m!=0 else m
 
-                #print('p', start,end)
-                #print('G1', start_1, end_1)
-                #print('G2', start_2, end_2)
+            
 
                 label_1 = G1.get_edge_data(start_1-1, end_1-1)['labels']
                 label_2 = G2.get_edge_data(start_2-1, end_2-1)['labels']
@@ -288,6 +286,134 @@ class Labeled_Random_Walk_Kernel:
                 K[i][j] = self.kernel_simple(G1[i], G2[j])
                     
         return K
+    
+    
+    
+class KernelSVC:
+    '''
+    Suport vector machine classifier from homework 2 with a few modifications so it works with the kernel class we have defined for the
+    random walk kernel. 
+    We change the optimizer to use one specifically for quadratic programming convex problems from the cvxopt library.
+    I also added a precomputed_K parameter, so if you run the fit function for some data, before rerruning for, for example a
+    different value of C, you can save the kernel matrix that is saved in the attribure K, and save time. 
+    '''
+    
+    def __init__(self, C, kernel, precomputed_K = np.array([]), epsilon = 1e-5, optimizer = 'qp'):
+        self.type = 'non-linear'
+        self.optimizer = optimizer
+        self.C = C                               
+        self.kernel = kernel        
+        self.alpha = None
+        self.support = None
+        self.epsilon = epsilon
+        self.norm_f = None
+        self.support_coefs = None
+        self.K = precomputed_K
+       
+    
+    def fit(self, X, y):
+       #### You might define here any variable needed for the rest of the code
+        N = len(y)
+        
+        if self.K.shape[0]==0:
+            self.K = self.kernel.kernel_matrix(X)
+        
+        
+        diag_y = np.diag(y)
+        P = diag_y.T @ self.K @ diag_y
+        q = - np.ones(N).astype(np.double)
+        G = np.vstack((np.identity(N),  -np.identity(N))).astype(np.double)
+        h = np.hstack((self.C*np.ones((N)),np.zeros((N)))).astype(np.double)
+        A = y.reshape(1,N).astype(np.double)
+        #print('rank A',np.linalg.matrix_rank(A) )
+        b = np.zeros((1,1), np.double)
+        #print('Rank([P; A; G]) ',np.linalg.matrix_rank(np.concatenate((P,A,G))) )
+        
+        print('Begin optimizing')
+        if self.optimizer =='qp':
+            optRes = solvers.qp(matrix(P), matrix(q), matrix(G), matrix(h), matrix(A), matrix(b), kktsolver = 'chol')
+            self.alpha = np.asarray(optRes['x']).reshape(N)
+            
+        elif self.optimizer == 'np':
+            # Lagrange dual problem
+            def loss(alpha):
+                return (1/2)*(alpha@P)@alpha.T + alpha@q.T #dual Loss
+
+            # Partial derivate of Ld on alpha
+            def grad_loss(alpha):
+                grad = P@alpha + q
+                return grad 
+
+            fun_eq = lambda alpha: (A@alpha).reshape(1,1)      
+            jac_eq = lambda alpha: y
+            fun_ineq = lambda alpha: -(G@alpha - h).reshape(2*N,1)       
+            jac_ineq = lambda alpha: -G  
+
+            constraints = ({'type': 'eq',  'fun': fun_eq, 'jac': jac_eq},
+                           {'type': 'ineq', 
+                            'fun': fun_ineq , 
+                            'jac': jac_ineq})
+
+            optRes = optimize.minimize(fun=lambda alpha: loss(alpha),
+                                       x0=np.ones(N), 
+                                       method='SLSQP', 
+                                       jac=lambda alpha: grad_loss(alpha), 
+                                       constraints=constraints)
+            self.alpha = optRes.x
+        
+            
+        print('alpha', self.alpha)
+        ## Assign the required attributes
+        
+   
+        #'''------------------- A matrix with each row corresponding to a point that falls on the margin ------------------''       
+        #Points that lay in te margin are also those s.t. 0<alpha_i<C
+        indices_on_margin = np.asarray((self.alpha>self.epsilon) & (self.alpha<self.C)).nonzero()[0]
+        self.margin_points =  [X[l] for l in indices_on_margin]
+        
+         #''' -----------------offset of the classifier------------------ '''
+        #Obtain supporting vectors and their corresponding coefficient for f
+        sv_indices = np.asarray((self.alpha>self.epsilon)).nonzero()[0]
+        self.support = [X[l] for l in sv_indices]
+        self.support_coefs = np.multiply(self.alpha[sv_indices], y[sv_indices])
+    
+                         
+        #Compute b as the average of b obtained by points in margin                 
+        self.b = np.mean((y[indices_on_margin]-self.separating_function_K(indices_on_margin, sv_indices)))
+        
+        
+        # '''------------------------RKHS norm of the function f ------------------------------'''          
+        #self.norm_f = (self.alpha.T@ self.K)@self.alpha
+
+        
+    def separating_function_K(self,indices_on_margin, sv_indices):
+        '''
+        Computes the separating function in the specific points needed to compute the offset b.
+        It uses the kernel matrix on the data instead od recomputing the kernel in these points.
+        
+        '''
+        print('Computing Separating Function on margin')
+        K = np.asarray([[self.K[i][j] for i in list(sv_indices)] for j in list(indices_on_margin)])
+       
+        
+        return  K @self.support_coefs
+    
+    ### Implementation of the separting function $f$ 
+    def separating_function(self,x):
+        # Input : matrix x of shape N data points times d dimension
+        # Output: vector of size N
+
+        K = self.kernel.kernel(self.support,x)
+        return  self.support_coefs @ K
+    
+    
+    def predict(self, X):
+        """ Predict y values in {-1, 1} """
+        d = self.separating_function(X)
+        #print('d',d)
+        return np.sign(d+self.b)
+    
+    
 
 if __name__ == "__main__":
     
@@ -300,9 +426,11 @@ if __name__ == "__main__":
 
     with open('./data-challenge-kernel-methods-2022-2023/training_labels.pkl', 'rb') as f:
         train_label = pickle.load(f)
-        with open('./RWK_Labeled_4200.pkl', 'rb') as f: 
+    
+    with open('./RWK_Labeled_4200.pkl', 'rb') as f: 
         K_train4200_label = pickle.load(f)
-        
+    X_train, X_test, y_train, y_test = train_test_split(train_data, train_label, test_size=0.3, random_state=42)
+    
     arr1 = np.asarray(y_train==1).nonzero()[0]
     alll = np.asarray(range(4200))
     arr0 = np.delete(alll, arr1)
