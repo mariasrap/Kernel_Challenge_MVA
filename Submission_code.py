@@ -10,6 +10,7 @@ from scipy.sparse.linalg import LinearOperator
 from tqdm import tqdm
 from cvxopt import solvers
 from cvxopt import matrix
+import mgzip
 
 class ProductGraph:
     '''
@@ -443,7 +444,9 @@ if __name__ == "__main__":
     y_balanced = y_train[balanced]
 
 
-    K_balanced = Labeled_Random_Walk_Kernel(method='direct').kernel_matrix(X_balanced)
+    with mgzip.open('./RWK_Labeled_4200.pkl', 'rb') as f:
+        K_balanced = pickle.load(f)
+
     
         # Initiating classifier and fitting training data
     svc = KernelSVC(C = 700, precomputed_K =  K_balanced, kernel = Labeled_Random_Walk_Kernel(method='direct'))
