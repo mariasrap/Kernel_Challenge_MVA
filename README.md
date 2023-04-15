@@ -15,4 +15,4 @@ python3 Submission_code.py
 
 ```
 
-You can also find the notebook version for a more clear view.
+Note that you will need the precomputed kernel matrix from the file 'RWK_Labeled_4200.pkl'.You can also find the notebook version for a more clear view.
