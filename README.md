@@ -1,6 +1,7 @@
 # Kernel_Challenge_MVA
 
 Repository for the Kaggle Challenge for the course Machine Learning with Kernel Methods. We mainly used a binary SVM classifier as a learning algorithm. We  tested the following kernels:
+
 * n-th order walk kernel
 * three versions of the random walk kernel
 
