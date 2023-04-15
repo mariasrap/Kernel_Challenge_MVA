@@ -427,10 +427,11 @@ if __name__ == "__main__":
     with open('./data-challenge-kernel-methods-2022-2023/training_labels.pkl', 'rb') as f:
         train_label = pickle.load(f)
     
-    with open('./RWK_Labeled_4200.pkl', 'rb') as f: 
-        K_train4200_label = pickle.load(f)
+   
     X_train, X_test, y_train, y_test = train_test_split(train_data, train_label, test_size=0.3, random_state=42)
     
+    
+        
     arr1 = np.asarray(y_train==1).nonzero()[0]
     alll = np.asarray(range(4200))
     arr0 = np.delete(alll, arr1)
@@ -441,8 +442,9 @@ if __name__ == "__main__":
     X_balanced = [X_train[l] for l in balanced]
     y_balanced = y_train[balanced]
 
-    K_balanced = K_train4200_label[balanced,:]
-    K_balanced = K_balanced[:, balanced]
+
+    K_balanced = Labeled_Random_Walk_Kernel(method='direct').kernel_matrix(X_balanced)
+    
         # Initiating classifier and fitting training data
     svc = KernelSVC(C = 700, precomputed_K =  K_balanced, kernel = Labeled_Random_Walk_Kernel(method='direct'))
     svc.fit(X_balanced, 2*y_balanced-1)
